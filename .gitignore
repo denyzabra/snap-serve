@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+/backend/var/
+/frontend/dist/
+/frontend/build/
+
+# Environment files
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Symfony specific
+/backend/config/jwt/*.pem
+/backend/var/
+
+# React specific
+/frontend/.env.local
+/frontend/dist/
