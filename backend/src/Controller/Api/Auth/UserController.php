@@ -1,18 +1,18 @@
 <?php
 
-namespace App\Controller;
+namespace App\Controller\Api\Auth;
 
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
-final class MenuController extends AbstractController
+final class UserController extends AbstractController
 {
-    #[Route('/menu', name: 'app_menu')]
+    #[Route('/user', name: 'app_user')]
     public function index(): Response
     {
-        return $this->render('menu/index.html.twig', [
-            'controller_name' => 'MenuController',
+        return $this->render('user/index.html.twig', [
+            'controller_name' => 'UserController',
         ]);
     }
 }
