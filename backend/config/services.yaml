@@ -2,19 +2,222 @@
 # Files in the packages/ subdirectory configure your dependencies.
 
 # Put parameters here that don't need to change on each machine where the app is deployed
-# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # Application parameters
+    app.name: '%env(APP_NAME)%'
+    app.version: '%env(APP_VERSION)%'
+    app.url: '%env(APP_URL)%'
+    
+    # JWT configuration parameters
+    lexik_jwt_authentication.token_ttl: '%env(int:JWT_TOKEN_TTL)%'
+    
+    # File upload parameters
+    app.upload_directory: '%env(SNAPSERVE_UPLOAD_DIR)%'
+    app.max_upload_size: '%env(int:SNAPSERVE_MAX_UPLOAD_SIZE)%'
+    
+    # Email configuration parameters
+    app.mailer_from_email: '%env(MAILER_FROM_EMAIL)%'
+    app.mailer_from_name: '%env(MAILER_FROM_NAME)%'
+    
+    # Security parameters
+    app.password_min_length: '%env(int:PASSWORD_MIN_LENGTH)%'
 
 services:
-    # default configuration for services in *this* file
+    # Default configuration for services in *this* file
     _defaults:
         autowire: true      # Automatically injects dependencies in your services.
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        bind:
+            # Bind common parameters to all services
+            $appUrl: '%app.url%'
+            $appName: '%app.name%'
 
-    # makes classes in src/ available to be used as services
-    # this creates a service per class whose id is the fully-qualified class name
+    # Makes classes in src/ available to be used as services
+    # This creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+            - '../src/DTO/'  # DTOs are data containers, not services
 
-    # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones
+    # Controllers are imported separately to make sure services can be injected
+    # as action arguments even if you don't extend any base controller class
+    App\Controller\:
+        resource: '../src/Controller/'
+        tags: ['controller.service_arguments']
+
+    # ===== AUTHENTICATION & SECURITY SERVICES =====
+    
+    # JWT Event Listener - customizes JWT token payload
+    App\EventListener\JWTCreatedListener:
+        tags:
+            - { name: kernel.event_listener, event: lexik_jwt_authentication.on_jwt_created, method: onJWTCreated }
+
+    # Authentication Service - handles user-restaurant associations and permissions
+    App\Service\AuthenticationService:
+        arguments:
+            $restaurantRepository: '@App\Repository\RestaurantRepository'
+            $logger: '@logger'
+
+    # Token Generator Service - secure token generation for email verification
+    App\Service\TokenGeneratorService:
+        arguments:
+            $secret: '%kernel.secret%'
+
+    # ===== EMAIL SERVICES =====
+    
+    # Email Service - handles all email communications
+    App\Service\EmailService:
+        arguments:
+            $mailer: '@mailer'
+            $logger: '@logger'
+            $twig: '@twig'
+            $fromEmail: '%app.mailer_from_email%'
+            $fromName: '%app.mailer_from_name%'
+            $appUrl: '%app.url%'
+
+    # ===== RESTAURANT MANAGEMENT SERVICES =====
+    
+    # Restaurant Service - restaurant profile and business logic
+    App\Service\RestaurantService:
+        arguments:
+            $restaurantRepository: '@App\Repository\RestaurantRepository'
+            $authService: '@App\Service\AuthenticationService'
+            $entityManager: '@doctrine.orm.entity_manager'
+            $logger: '@logger'
+
+    # File Upload Service - handles restaurant logo and image uploads
+    App\Service\FileUploadService:
+        arguments:
+            $slugger: '@string_slugger'  # Changed from '@slugger' to '@string_slugger'
+            $logger: '@logger'
+            $uploadDir: '%app.upload_directory%'
+            $maxUploadSize: '%app.max_upload_size%'
+            $appUrl: '%app.url%'
+
+    # ===== REPOSITORY SERVICES =====
+    
+    # Enhanced repository services with custom methods
+    App\Repository\UserRepository:
+        arguments:
+            $registry: '@doctrine'
+
+    App\Repository\RestaurantRepository:
+        arguments:
+            $registry: '@doctrine'
+
+    App\Repository\VerificationTokenRepository:
+        arguments:
+            $registry: '@doctrine'
+
+    App\Repository\BusinessHoursRepository:
+        arguments:
+            $registry: '@doctrine'
+
+    # ===== RATE LIMITING SERVICES =====
+    
+    # Rate limiter for login attempts
+    login_rate_limiter:
+        class: Symfony\Component\RateLimiter\RateLimiterFactory
+        arguments:
+            - 'sliding_window'
+            - 'login_limiter'
+            - '%env(int:RATE_LIMIT_ADMIN_REGISTRATION_PER_IP)%'
+            - '%env(int:RATE_LIMIT_ADMIN_REGISTRATION_WINDOW)%'
+
+    # Rate limiter for admin registration
+    admin_registration_rate_limiter:
+        class: Symfony\Component\RateLimiter\RateLimiterFactory
+        arguments:
+            - 'sliding_window'
+            - 'admin_registration_limiter'
+            - '%env(int:RATE_LIMIT_ADMIN_REGISTRATION_PER_IP)%'
+            - '%env(int:RATE_LIMIT_ADMIN_REGISTRATION_WINDOW)%'
+
+    # Rate limiter for email verification
+    email_verification_rate_limiter:
+        class: Symfony\Component\RateLimiter\RateLimiterFactory
+        arguments:
+            - 'sliding_window'
+            - 'email_verification_limiter'
+            - '%env(int:RATE_LIMIT_EMAIL_VERIFICATION_PER_IP)%'
+            - '%env(int:RATE_LIMIT_EMAIL_VERIFICATION_WINDOW)%'
+
+    # Rate limiter for file uploads
+    file_upload_rate_limiter:
+        class: Symfony\Component\RateLimiter\RateLimiterFactory
+        arguments:
+            - 'sliding_window'
+            - 'file_upload_limiter'
+            - 5    # 5 uploads
+            - 300  # per 5 minutes
+
+    # ===== VALIDATION SERVICES =====
+    
+    # Custom validators can be added here as needed
+    # Example: Custom restaurant name validator
+    # App\Validator\RestaurantNameValidator:
+    #     tags: [validator.constraint_validator]
+
+    # ===== EVENT LISTENERS & SUBSCRIBERS =====
+    
+    # Restaurant Updated Event Listener (for future implementation)
+    # App\EventListener\RestaurantUpdatedListener:
+    #     tags:
+    #         - { name: doctrine.event_listener, event: postUpdate }
+
+    # ===== COMMAND SERVICES =====
+    
+    # Commands for administrative tasks
+    App\Command\:
+        resource: '../src/Command/'
+        tags: [console.command]
+
+    # ===== SECURITY SERVICES =====
+    
+    # Password strength validator service (for future implementation)
+    # App\Service\PasswordValidatorService:
+    #     arguments:
+    #         $minLength: '%app.password_min_length%'
+
+    # ===== THIRD-PARTY INTEGRATIONS =====
+    
+    # Placeholder for future integrations (payment gateways, etc.)
+    # App\Service\PaymentService:
+    #     arguments:
+    #         $apiKey: '%env(PAYMENT_API_KEY)%'
+
+    # ===== DEVELOPMENT & TESTING SERVICES =====
+    
+    # Admin User Creation Service (for testing and development)
+    App\Service\AdminUserCreationService:
+        arguments:
+            $entityManager: '@doctrine.orm.entity_manager'
+            $passwordHasher: '@security.user_password_hasher'
+            $logger: '@logger'
+
+# when@dev:
+#     services:
+#         # Development-specific services
+#         App\Service\DevDataService:
+#             public: true
+#             arguments:
+#                 $entityManager: '@doctrine.orm.entity_manager'
+#                 $logger: '@logger'
+
+when@test:
+    services:
+        # Test-specific services
+        App\Service\TestDataService:
+            arguments:
+                $entityManager: '@doctrine.orm.entity_manager'
+
+when@prod:
+    services:
+        # Production-specific optimizations
+        _defaults:
+            autowire: true
+            autoconfigure: true
+            public: false

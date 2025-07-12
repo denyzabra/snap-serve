@@ -1,50 +1,90 @@
 security:
-    # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
+    # Password hashers configuration - updated to use our User entity
     password_hashers:
-        Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
-    # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
+        App\Entity\User: 'auto'
+
+    # User providers
     providers:
-        # used to reload user from session & other features (e.g. switch_user)
         app_user_provider:
             entity:
                 class: App\Entity\User
                 property: email
+
+    # Firewalls configuration
     firewalls:
         dev:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
+
+        # Login firewall - handles JSON login
+        login:
+            pattern: ^/api/auth/login$
+            stateless: true
+            json_login:
+                check_path: /api/auth/login
+                success_handler: lexik_jwt_authentication.handler.authentication_success
+                failure_handler: lexik_jwt_authentication.handler.authentication_failure
+                username_path: email
+                password_path: password
+
+        # API firewall - JWT protected routes
+        api:
+            pattern: ^/api
+            stateless: true
+            entry_point: jwt
+            jwt: ~
+            provider: app_user_provider
+
+        # Main firewall for web routes (if any)
         main:
             lazy: true
             provider: app_user_provider
-            form_login:
-                login_path: app_login
-                check_path: app_login
-                enable_csrf: true
-            logout:
-                path: app_logout
-                # where to redirect after logout
-                # target: app_any_route
 
-            # activate different ways to authenticate
-            # https://symfony.com/doc/current/security.html#the-firewall
-
-            # https://symfony.com/doc/current/security/impersonating_user.html
-            # switch_user: true
-
-    # Easy way to control access for large sections of your site
-    # Note: Only the *first* access control that matches will be used
+    # Access control rules
     access_control:
-        # - { path: ^/admin, roles: ROLE_ADMIN }
-        # - { path: ^/profile, roles: ROLE_USER }
+        # Public authentication endpoints
+        - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/verify, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/verify/resend, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/verify/status, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admins/signup, roles: PUBLIC_ACCESS }
+        - { path: ^/api/public, roles: PUBLIC_ACCESS }
+        - { path: ^/api/health, roles: PUBLIC_ACCESS }
+        
+        # Admin only endpoints
+        - { path: ^/api/admin, roles: ROLE_ADMIN }
+        - { path: ^/api/restaurants, roles: ROLE_ADMIN }
+        
+        # Authenticated user endpoints
+        - { path: ^/api/auth/me, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/auth/logout, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/auth/refresh, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/auth/status, roles: IS_AUTHENTICATED_FULLY }
+        
+        # Menu management endpoints
+        - { path: ^/api/menu, roles: ROLE_STAFF }
+        
+        # Order management endpoints  
+        - { path: ^/api/order, roles: ROLE_STAFF }
+        
+        # Payment endpoints
+        - { path: ^/api/payment, roles: ROLE_STAFF }
+        
+        # Protected API endpoints (fallback)
+        - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
 
+    # Role hierarchy
+    role_hierarchy:
+        ROLE_CUSTOMER: ROLE_USER
+        ROLE_STAFF: ROLE_CUSTOMER
+        ROLE_MANAGER: ROLE_STAFF
+        ROLE_ADMIN: ROLE_MANAGER
+
+# Test environment configuration
 when@test:
     security:
         password_hashers:
-            # By default, password hashers are resource intensive and take time. This is
-            # important to generate secure password hashes. In tests however, secure hashes
-            # are not important, waste resources and increase test times. The following
-            # reduces the work factor to the lowest possible values.
-            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
+            App\Entity\User:
                 algorithm: auto
                 cost: 4 # Lowest possible value for bcrypt
                 time_cost: 3 # Lowest possible value for argon
